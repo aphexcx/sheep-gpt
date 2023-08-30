@@ -5,7 +5,7 @@ import requests
 import time
 import psutil
 from mlc_chat import ChatModule, ChatConfig, ConvConfig
-from mlc_chat.callback import StreamToStdout
+from mlc_chat.callback import StreamToStdout, DeltaCallback
 
 from zeroconf_listener import listener
 
@@ -25,7 +25,7 @@ print(f"Current RAM usage: {psutil.Process().memory_info().rss / 1024 ** 2} MB")
 
 
 # Define the maximum number of retries for failed operations
-max_retries = 3
+max_retries = 2
 
 local_messages = []
 last_posted_thought = None
@@ -39,7 +39,7 @@ def get_messages() -> Optional[List[str]]:
     for _ in range(max_retries):
         try:
             response = requests.get(get_endpoint)
-            messages = [msg["str"] for msg in response.json()]
+            messages = [msg["str"] for msg in response.json() if msg["type" ] == "D"]
             print(f"Got {len(messages)} messages")
             diff = difflib.ndiff(local_messages, messages)
             new_messages = [l[2:] for l in diff if l.startswith('+ ')]
@@ -58,7 +58,7 @@ def generate_response(messages: List[str]) -> Optional[str]:
         try:
             response = cm.generate(
                 prompt=prompt,
-                progress_callback=StreamToStdout(callback_interval=2),
+                progress_callback=ResponseCallback(callback_interval=2),
             )
             print("Response generated")
             print(cm.stats())
@@ -69,10 +69,54 @@ def generate_response(messages: List[str]) -> Optional[str]:
     return None
 
 
+class ResponseCallback(DeltaCallback):
+    """Stream the output of the chat module to stdout."""
+
+    def __init__(self, callback_interval: int = 2):
+        r"""Initialize the callback class with callback interval.
+
+        Parameters
+        ----------
+        callback_interval : int
+            The refresh rate of the streaming process.
+        """
+        super().__init__()
+        self.callback_interval = callback_interval
+        notify_generating_thought(True)
+
+    def delta_callback(self, delta_message: str):
+        r"""Stream the delta message directly to stdout.
+
+        Parameters
+        ----------
+        delta_message : str
+            The delta message (the part that has not been streamed to stdout yet).
+        """
+        print(delta_message, end="", flush=True)
+        post_partial(delta_message)
+
+    def stopped_callback(self):
+        r"""Stream an additional '\n' when generation ends."""
+        print()
+        notify_generating_thought(False)
+
+
+def post_partial(chunk: str) -> bool:
+    # print("Posting partial message chunk...")
+    # Define the POST endpoint
+    post_endpoint = f"http://{listener.server_ip}:8080/streamPartialSheepThought"
+    # for _ in range(max_retries):
+    try:
+        requests.post(post_endpoint, json={"message": chunk})
+        # print(f"Partial message chunk posted: {chunk}")
+        return True
+    except Exception as e:
+        print(f"Error posting partial message: {e}")
+    return False
+
 def post_message(output: str) -> bool:
     global last_posted_thought
     print("Posting new thought...")
-    # Define the POST endpoint
     post_endpoint = f"http://{listener.server_ip}:8080/newSheepThought"
     if output == last_posted_thought:
         print("Thought is the same as the last posted thought, skipping post.")
@@ -87,6 +131,17 @@ def post_message(output: str) -> bool:
             print(f"Error posting message: {e}")
     return False
 
+def notify_generating_thought(generating: bool) -> bool:
+    print(f"Notifying sheep is thinking={generating}...")
+    post_endpoint = f"http://{listener.server_ip}:8080/isGeneratingThought"
+    for _ in range(max_retries):
+        try:
+            requests.post(post_endpoint, json={"isGenerating": generating})
+            print("Sheep is thinking notification posted")
+            return True
+        except Exception as e:
+            print(f"Error posting sheep is thinking notification: {e}")
+    return False
 
 while True:
     messages = get_messages()
@@ -99,4 +154,4 @@ while True:
                 post_message(output)
         else:
             print("No new messages, skipping response generation.")
-    time.sleep(20)
+    time.sleep(5)
