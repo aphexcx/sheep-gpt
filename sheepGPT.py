@@ -12,7 +12,7 @@ from zeroconf_listener import listener
 
 CHATMODEL = "Llama-2-70b-chat-hf-q4f16_1"
 
-with open('system_prompt.txt', 'r') as file:
+with open('system_prompt_baaahs.txt', 'r') as file:
     system_prompt = file.read()
 
 print(f"Loading {CHATMODEL}...")
