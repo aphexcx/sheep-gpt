@@ -12,7 +12,7 @@ from zeroconf_listener import listener
 
 CHATMODEL = "Llama-2-70b-chat-hf-q4f16_1"
 
-with open('system_prompt_baaahs.txt', 'r') as file:
+with open("system_prompt_baaahs.txt", "r") as file:
     system_prompt = file.read()
 
 print(f"Loading {CHATMODEL}...")
@@ -39,10 +39,10 @@ def get_messages() -> Optional[List[str]]:
     for _ in range(max_retries):
         try:
             response = requests.get(get_endpoint)
-            messages = [msg["str"] for msg in response.json() if msg["type" ] == "D"]
+            messages = [msg["str"] for msg in response.json() if msg["type"] == "D"]
             print(f"Got {len(messages)} messages")
             diff = difflib.ndiff(local_messages, messages)
-            new_messages = [l[2:] for l in diff if l.startswith('+ ')]
+            new_messages = [l[2:] for l in diff if l.startswith("+ ")]
             local_messages = messages
             return new_messages
         except Exception as e:
@@ -52,7 +52,7 @@ def get_messages() -> Optional[List[str]]:
 
 def generate_response(messages: List[str]) -> Optional[str]:
     print("Generating response...")
-    prompt = "" #"Here are the most recent messages people have written: \n"
+    prompt = ""  # "Here are the most recent messages people have written: \n"
     prompt += "\n".join([msg for msg in messages])
     for _ in range(max_retries):
         try:
@@ -62,7 +62,9 @@ def generate_response(messages: List[str]) -> Optional[str]:
             )
             print("Response generated")
             print(cm.stats())
-            print(f"Current RAM usage: {psutil.Process().memory_info().rss / 1024 ** 2} MB")
+            print(
+                f"Current RAM usage: {psutil.Process().memory_info().rss / 1024 ** 2} MB"
+            )
             return response
         except Exception as e:
             print(f"Error generating response: {e}")
@@ -114,6 +116,7 @@ def post_partial(chunk: str) -> bool:
         print(f"Error posting partial message: {e}")
     return False
 
+
 def post_message(output: str) -> bool:
     global last_posted_thought
     print("Posting new thought...")
@@ -131,6 +134,7 @@ def post_message(output: str) -> bool:
             print(f"Error posting message: {e}")
     return False
 
+
 def notify_generating_thought(generating: bool) -> bool:
     print(f"Notifying sheep is thinking={generating}...")
     post_endpoint = f"http://{listener.server_ip}:8080/isGeneratingThought"
@@ -143,11 +147,12 @@ def notify_generating_thought(generating: bool) -> bool:
             print(f"Error posting sheep is thinking notification: {e}")
     return False
 
+
 while True:
     messages = get_messages()
     if messages is not None:
         if len(messages) > 0:
-            newmessages ="\n".join([msg for msg in messages])
+            newmessages = "\n".join([msg for msg in messages])
             print(f"New messages\n: {newmessages}")
             output = generate_response(messages)
             if output is not None:
