@@ -1,3 +1,4 @@
+import argparse
 from typing import Dict, List, Optional, Any
 import difflib
 
@@ -8,20 +9,42 @@ from mlc_chat import ChatModule, ChatConfig, ConvConfig
 from mlc_chat.callback import StreamToStdout, DeltaCallback
 
 from zeroconf_listener import listener
+import openai
+import aiohttp
+import numpy
 
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Choose the model to use for response generation."
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default="llama2",
+        choices=["llama2", "gpt-4"],
+        help="The model to use for response generation.",
+    )
+    return parser.parse_args()
+
+
+args = parse_args()
 
 CHATMODEL = "Llama-2-70b-chat-hf-q4f16_1"
-
-with open("system_prompt_baaahs.txt", "r") as file:
+with open("system_prompt_sjobs.txt", "r") as file:
     system_prompt = file.read()
 
-print(f"Loading {CHATMODEL}...")
-# Create a ChatModule instance
-conv_config = ConvConfig(system=system_prompt)
-config = ChatConfig(temperature=0.75, conv_config=conv_config)
-cm = ChatModule(model=CHATMODEL, chat_config=config)
-print(f"{CHATMODEL} loaded")
-print(f"Current RAM usage: {psutil.Process().memory_info().rss / 1024 ** 2} MB")
+if args.model == "llama2":
+    print(f"Loading {CHATMODEL}...")
+    # Create a ChatModule instance
+    conv_config = ConvConfig(system=system_prompt)
+    config = ChatConfig(temperature=0.75, conv_config=conv_config)
+    cm = ChatModule(model=CHATMODEL, chat_config=config)
+    print(f"{CHATMODEL} loaded")
+    print(f"Current RAM usage: {psutil.Process().memory_info().rss / 1024 ** 2} MB")
+else:
+    print("Using OpenAI GPT-4 for response generation.")
+    openai.api_key = "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"
 
 
 # Define the maximum number of retries for failed operations
@@ -47,27 +70,6 @@ def get_messages() -> Optional[List[str]]:
             return new_messages
         except Exception as e:
             print(f"Error getting messages: {e}")
-    return None
-
-
-def generate_response(messages: List[str]) -> Optional[str]:
-    print("Generating response...")
-    prompt = ""  # "Here are the most recent messages people have written: \n"
-    prompt += "\n".join([msg for msg in messages])
-    for _ in range(max_retries):
-        try:
-            response = cm.generate(
-                prompt=prompt,
-                progress_callback=ResponseCallback(callback_interval=2),
-            )
-            print("Response generated")
-            print(cm.stats())
-            print(
-                f"Current RAM usage: {psutil.Process().memory_info().rss / 1024 ** 2} MB"
-            )
-            return response
-        except Exception as e:
-            print(f"Error generating response: {e}")
     return None
 
 
@@ -147,6 +149,49 @@ def notify_generating_thought(generating: bool) -> bool:
             print(f"Error posting sheep is thinking notification: {e}")
     return False
 
+
+def generate_response(messages: List[str]) -> Optional[str]:
+    print("Generating response...")
+    prompt = ""  # "Here are the most recent messages people have written: \n"
+    prompt += "\n".join([msg for msg in messages])
+    for _ in range(max_retries):
+        try:
+            if args.model == "llama2":
+                response = cm.generate(
+                    prompt=prompt,
+                    progress_callback=ResponseCallback(callback_interval=2),
+                )
+                print("Response generated")
+                print(cm.stats())
+                print(
+                    f"Current RAM usage: {psutil.Process().memory_info().rss / 1024 ** 2} MB"
+                )
+            else:
+                response = openai.ChatCompletion.create(
+                    model="gpt-4-1106-preview",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": prompt},
+                    ],
+                    temperature=0,
+                    stream=True,
+                )
+                callback = ResponseCallback(callback_interval=2)
+                for chunk in response:
+                    if chunk.choices[0].finish_reason == "stop":
+                        callback.stopped_callback()
+                    else:
+                        callback.delta_callback(chunk.choices[0].delta.content)
+
+                print("Response generated")
+            return response
+        except Exception as e:
+            print(f"Error generating response: {e}")
+            notify_generating_thought(False)
+    return None
+
+
+# generate_response(["hello", "how are you?"])
 
 while True:
     messages = get_messages()
