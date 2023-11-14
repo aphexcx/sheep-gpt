@@ -1,17 +1,15 @@
 import argparse
-from typing import Dict, List, Optional, Any
 import difflib
-
-import requests
 import time
+from typing import List, Optional
+
+import openai
 import psutil
+import requests
 from mlc_chat import ChatModule, ChatConfig, ConvConfig
-from mlc_chat.callback import StreamToStdout, DeltaCallback
+from mlc_chat.callback import DeltaCallback
 
 from zeroconf_listener import listener
-import openai
-import aiohttp
-import numpy
 
 
 def parse_args():
@@ -166,6 +164,7 @@ def generate_response(messages: List[str]) -> Optional[str]:
                 print(
                     f"Current RAM usage: {psutil.Process().memory_info().rss / 1024 ** 2} MB"
                 )
+                return response
             else:
                 response = openai.ChatCompletion.create(
                     model="gpt-4-1106-preview",
@@ -177,14 +176,16 @@ def generate_response(messages: List[str]) -> Optional[str]:
                     stream=True,
                 )
                 callback = ResponseCallback(callback_interval=2)
+                total_response = ""
                 for chunk in response:
                     if chunk.choices[0].finish_reason == "stop":
                         callback.stopped_callback()
                     else:
                         callback.delta_callback(chunk.choices[0].delta.content)
+                        total_response += chunk.choices[0].delta.content
 
                 print("Response generated")
-            return response
+                return total_response
         except Exception as e:
             print(f"Error generating response: {e}")
             notify_generating_thought(False)
