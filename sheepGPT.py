@@ -35,7 +35,7 @@ with open("system_prompt_sjobs.txt", "r") as file:
 if args.model == "llama2":
     print(f"Loading {CHATMODEL}...")
     # Create a ChatModule instance
-    conv_config = ConvConfig(system=system_prompt)
+    conv_config = ConvConfig(system_message=system_prompt)
     config = ChatConfig(temperature=0.75, conv_config=conv_config)
     cm = ChatModule(model=CHATMODEL, chat_config=config)
     print(f"{CHATMODEL} loaded")
