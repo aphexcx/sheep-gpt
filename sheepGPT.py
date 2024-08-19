@@ -3,9 +3,9 @@ import difflib
 import time
 from typing import List, Optional
 
+import ollama
 import openai
 import requests
-from mlc_llm import MLCEngine
 
 from zeroconf_listener import listener
 
@@ -17,8 +17,8 @@ def parse_args():
     parser.add_argument(
         "--model",
         type=str,
-        default="llama3",
-        choices=["llama3", "gpt-4"],
+        default="ollama",
+        choices=["ollama", "gpt-4"],
         help="The model to use for response generation.",
     )
     return parser.parse_args()
@@ -26,14 +26,13 @@ def parse_args():
 
 args = parse_args()
 
-with open("system_prompt_sjobs.txt", "r") as file:
+with open("system_prompt_baaahs.txt", "r") as file:
     system_prompt = file.read()
+print(f"Loaded system prompt: {system_prompt[:100]}...")  # Print first 100 characters
 
-if args.model == "llama3":
-    # Create engine
-    model = "Llama-3.1-70B-Instruct-q4f16_1-MLC"
-    print(f"Loading {model}...")
-    engine = MLCEngine(model)
+if args.model == "ollama":
+    model = "llama3.1:70b"
+    print(f"Using Ollama with {model} model for response generation.")
 else:
     print("Using OpenAI GPT-4 for response generation.")
     openai.api_key = "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"
@@ -68,13 +67,21 @@ def get_messages() -> Optional[List[str]]:
 def stream_response(response):
     notify_generating_thought(True)
     total_response = ""
-    for chunk in response:
-        for choice in chunk.choices:
-            delta_message = choice.delta.content
+    if args.model == "ollama":
+        for chunk in response:
+            delta_message = chunk['message']['content']
             if delta_message:
                 print(delta_message, end="", flush=True)
                 total_response += delta_message
                 post_partial(delta_message)
+    else:
+        for chunk in response:
+            for choice in chunk.choices:
+                delta_message = choice.delta.content
+                if delta_message:
+                    print(delta_message, end="", flush=True)
+                    total_response += delta_message
+                    post_partial(delta_message)
     print()
     notify_generating_thought(False)
     return total_response
@@ -130,16 +137,16 @@ def generate_response(messages: List[str]) -> Optional[str]:
     prompt = "\n".join(messages)
     for _ in range(max_retries):
         try:
-            if args.model == "llama3":
-                response = engine.chat.completions.create(
+            if args.model == "ollama":
+                stream = ollama.chat(
+                    model=model,
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": prompt}
                     ],
-                    model=model,
-                    stream=True,
+                    stream=True
                 )
-                total_response = stream_response(response)
+                total_response = stream_response(stream)
                 print("Response generated")
                 return total_response
             else:
@@ -161,7 +168,7 @@ def generate_response(messages: List[str]) -> Optional[str]:
     return None
 
 
-generate_response(["hello", "how are you?"])
+generate_response(["hello", "who are you?"])
 
 while True:
     messages = get_messages()
