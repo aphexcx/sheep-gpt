@@ -2,7 +2,6 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/Llama-3.1-70B-Instruct-q0f16-MLC" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/Llama-3.1-70B-Instruct-q4f16_1-MLC" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/dist/prebuilt/lib" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/dist/prebuilt/mlc-chat-Llama-2-70b-chat-hf-q4f16_1" vcs="Git" />

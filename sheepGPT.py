@@ -1,5 +1,7 @@
 import argparse
 import difflib
+import json
+import os
 import time
 from typing import List, Optional
 
@@ -8,6 +10,8 @@ import openai
 import requests
 
 from zeroconf_listener import listener
+
+CACHE_FILE = "message_cache.json"
 
 
 def parse_args():
@@ -41,12 +45,21 @@ else:
 # Define the maximum number of retries for failed operations
 max_retries = 2
 
-local_messages = []
 last_posted_thought = None
 
 
+def load_cached_messages() -> List[str]:
+    if os.path.exists(CACHE_FILE):
+        with open(CACHE_FILE, 'r') as f:
+            return json.load(f)
+    return []
+
+
+def save_cached_messages(messages: List[str]):
+    with open(CACHE_FILE, 'w') as f:
+        json.dump(messages, f)
+
 def get_messages() -> Optional[List[str]]:
-    global local_messages
     print("Getting messages...")
     # Define the GET endpoint
     get_endpoint = f"http://{listener.server_ip}:8080/messages"
@@ -55,9 +68,10 @@ def get_messages() -> Optional[List[str]]:
             response = requests.get(get_endpoint)
             messages = [msg["str"] for msg in response.json() if msg["type"] == "D"]
             print(f"Got {len(messages)} messages")
-            diff = difflib.ndiff(local_messages, messages)
+            cached_messages = load_cached_messages()
+            diff = difflib.ndiff(cached_messages, messages)
             new_messages = [l[2:] for l in diff if l.startswith("+ ")]
-            local_messages = messages
+            save_cached_messages(messages)
             return new_messages
         except Exception as e:
             print(f"Error getting messages: {e}")
@@ -73,7 +87,6 @@ def stream_response(response):
             if delta_message:
                 print(delta_message, end="", flush=True)
                 total_response += delta_message
-                post_partial(delta_message)
     else:
         for chunk in response:
             for choice in chunk.choices:
@@ -81,36 +94,38 @@ def stream_response(response):
                 if delta_message:
                     print(delta_message, end="", flush=True)
                     total_response += delta_message
-                    post_partial(delta_message)
     print()
     notify_generating_thought(False)
     return total_response
 
 
-def post_partial(chunk: str) -> bool:
-    # print("Posting partial message chunk...")
-    # Define the POST endpoint
-    post_endpoint = f"http://{listener.server_ip}:8080/streamPartialSheepThought"
-    # for _ in range(max_retries):
-    try:
-        requests.post(post_endpoint, json={"message": chunk})
-        # print(f"Partial message chunk posted: {chunk}")
-        return True
-    except Exception as e:
-        print(f"Error posting partial message: {e}")
-    return False
+def is_question(message: str) -> bool:
+    # Check if the message ends with a question mark or starts with a question word
+    question_words = ['who', 'what', 'when', 'where', 'why', 'how', 'is', 'are', 'can', 'could', 'would', 'should',
+                      'do', 'does', 'did']
+    return message.strip().endswith('?') or any(message.lower().strip().startswith(word) for word in question_words)
 
 
-def post_message(output: str) -> bool:
+def determine_in_reply_to(messages: List[str]) -> str:
+    # Find the last question in the list of messages
+    for message in reversed(messages):
+        if is_question(message):
+            return message
+    # If no question is found, return the last message
+    return messages[-1] if messages else ""
+
+
+def post_message(output: str, in_reply_to: str) -> bool:
     global last_posted_thought
     print("Posting new thought...")
-    post_endpoint = f"http://{listener.server_ip}:8080/newSheepThought"
+    post_endpoint = f"http://{listener.server_ip}:8080/newGPTReply"
     if output == last_posted_thought:
         print("Thought is the same as the last posted thought, skipping post.")
         return False
+
     for _ in range(max_retries):
         try:
-            requests.post(post_endpoint, json={"message": output})
+            requests.post(post_endpoint, json={"answer": output, "inReplyTo": in_reply_to})
             print("Thought posted")
             last_posted_thought = output
             return True
@@ -168,17 +183,19 @@ def generate_response(messages: List[str]) -> Optional[str]:
     return None
 
 
-generate_response(["hello", "who are you?"])
+# post_message(generate_response(["hello", "who are you?"]))
+
 
 while True:
     messages = get_messages()
     if messages is not None:
         if len(messages) > 0:
             newmessages = "\n".join([msg for msg in messages])
-            print(f"New messages\n: {newmessages}")
-            output = generate_response(messages)
-            if output is not None:
-                post_message(output)
+            print(f"{len(newmessages)} new messages:\n: {newmessages}")
+            response = generate_response(messages)
+            if response is not None:
+                in_reply_to = determine_in_reply_to(messages)
+                post_message(response, in_reply_to)
         else:
             print("No new messages, skipping response generation.")
     time.sleep(5)
