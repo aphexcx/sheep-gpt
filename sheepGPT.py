@@ -8,6 +8,7 @@ from typing import List, Optional
 import ollama
 import openai
 import requests
+from sympy.logic.boolalg import Boolean
 
 from zeroconf_listener import listener
 
@@ -78,8 +79,8 @@ def get_messages() -> Optional[List[str]]:
     return None
 
 
-def stream_response(response):
-    notify_generating_thought(True)
+def stream_response(response, notify_thinking: bool = False):
+    if notify_thinking: notify_generating_thought(True)
     total_response = ""
     if args.model == "ollama":
         for chunk in response:
@@ -95,7 +96,7 @@ def stream_response(response):
                     print(delta_message, end="", flush=True)
                     total_response += delta_message
     print()
-    notify_generating_thought(False)
+    if notify_thinking: notify_generating_thought(False)
     return total_response
 
 
@@ -161,7 +162,7 @@ def generate_response(messages: List[str]) -> Optional[str]:
                     ],
                     stream=True
                 )
-                total_response = stream_response(stream)
+                total_response = stream_response(stream, notify_thinking=False)
                 print("Response generated")
                 return total_response
             else:
@@ -184,7 +185,6 @@ def generate_response(messages: List[str]) -> Optional[str]:
 
 
 # post_message(generate_response(["hello", "who are you?"]))
-
 
 while True:
     messages = get_messages()
